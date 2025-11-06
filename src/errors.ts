@@ -47,3 +47,13 @@ export class ParserError extends Error {
         this.name = "ParserError";
     }
 }
+
+/*
+ * Ошибка парсинга сообщения
+ */
+export class FileNotFound extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = "FileNotFound";
+    }
+}

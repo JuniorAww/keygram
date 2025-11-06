@@ -1,3 +1,3 @@
-export { TelegramBot } from "./bot";
+export { TelegramBot, Image } from "./bot";
 export { Keyboard } from "./keyboard";
 export * from "./errors";
