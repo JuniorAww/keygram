@@ -19,14 +19,15 @@ Additionaly, future plans include ready-to-use classes for page panels, cached m
 ## ✨ Features
 
 * <b>Functions “embedded” into buttons</b>  
-When creating a keyboard with callbacks, they are stored in a <b>global store</b> and executed whenever the callback_data is processed.
-
+When creating a keyboard with callbacks, they are stored in a **global store** and executed whenever the `callback_data` is processed.
 * <b>Built-in security</b>  
-By default, callback buttons have <i>signatures</i> that make it harder to forge arguments.  
-This feature can be disabled: `new TelegramBot({ token, signCallbacks: false })`
+By default, callback buttons have *signatures* that make it harder to forge arguments.
+</br>This feature can be disabled: `new TelegramBot({ token, signCallbacks: false })`
+* <b>Text editing</b>
+  - Use a single method `ctx.edit()` to edit both text and file captions. No more separate `bot.editMessageText` or `bot.editMessageCaption` calls!
+  - The adaptive method `ctx.respond()` will either send a new message or edit the existing one (if triggered by a callback button)
 
-* <b>Text editing</b>  
-You can use a single method `ctx.edit()` to edit both text and file captions — no more separate `bot.editMessageText` or `bot.editMessageCaption` calls!
+There are more features and they will be documented soon. For now, you can look at examples!
 
 ## 🚀 Installation
 Install using your preferred package manager:

@@ -53,25 +53,40 @@ function Url(this: any, text: string, url: string) {
  * @param [args] Arguments (optional)
  */
 function Callback(this: any, text: string, action: Function | string, ...args: any[] | undefined[]) {
-    let unsigned;
-    const strArgs = (args?.length ? (' ' + args?.join(' ')) : ''); // stringified args
-    
-    if (typeof action !== 'string') {
-        if (!this._bot.hasCallback(action)) this._bot.register(action);
-        unsigned = action.name + strArgs;
+    if (this._inline) {
+        let unsigned;
+        const strArgs = (args?.length ? (' ' + args?.join(' ')) : ''); // stringified args
+        
+        if (typeof action !== 'string') {
+            if (!this._bot.hasCallback(action)) this._bot.register(action);
+            unsigned = action.name + strArgs;
+        }
+        else {
+            unsigned = action + strArgs;
+        }
+        
+        const data = this._bot.requireSig() ? (this._bot.sig(unsigned) + ' ' + unsigned) : unsigned;
+        
+        this._keyboard[this._row].push({
+            text,
+            data,
+        });
+        
+        return this;
     }
     else {
-        unsigned = action + strArgs;
+        if (this.args.length) throw new Error("Sorry! As for now, reply keyboards can't have arguments")
+        
+        if (!this._bot.hasTextCallback(text, action)) {
+            this._bot.text(text, action);
+        }
+        
+        this._keyboard[this._row].push({
+            text
+        })
+        
+        return this;
     }
-    
-    const data = this._bot.requireSig() ? (this._bot.sig(unsigned) + ' ' + unsigned) : unsigned;
-    
-    this._keyboard[this._row].push({
-        text,
-        data,
-    });
-    
-    return this;
 }
 
 /*

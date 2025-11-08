@@ -2,6 +2,7 @@ import { KeyboardInterface, SerializedBtn } from './keyboard'
 import { INSTANCES, BOT_IDS } from './store'
 import { NoBotSelected, NamelessCallback, CallbackNotFound, CallbackOverride, OptionsError,
          ParserError, FileNotFound } from './errors'
+import { StateManager, StateManagerMixin } from './mixins/states'
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 
@@ -88,8 +89,14 @@ class CallbackManager {
     hasCallback(func: Function) {
         return !!this.callbacks[func.name];
     }
+    
+    hasTextCallback(text: string, func: Function) {
+        return (this as any).handlers.findIndex((h: any) => h.update === "message"
+                                             && h.key === "text"
+                                             && h.value === text) !== -1
+    }
 
-    protected async handleCallback(ctx: any, name: string, args: any[]) {
+    protected async handleCallback(ctx: any, name: string, args: any[] = []) {
         if (!this.callbacks[name]) {
             const err = new CallbackNotFound("Callback function wasn't registered. Function name: " + name 
                                            + "\nPossible cause: Keyboard() was created with Callback() outside the main script");
@@ -653,11 +660,16 @@ class Polling extends CallbackManager {
     
     protected async processUpdate(context: Context, update: any) {
         handleMiddleware: {
+            const state = await context.state;
+            const allow = getAllow(state); // { h: {}, f: {} }
+            
             for (const handler of this.handlers) {
                 if (handler.update) {
                     if (!update[handler.update]) continue;
+                    else if (allow && !allow.h[handler.update]) continue;
                     else if (handler.key !== undefined) {
-                        if (handler.value !== undefined) {
+                        if (allow && allow.h[handler.update] !== null && allow.h[handler.update] !== handler.key) continue;
+                        else if (handler.value !== undefined) {
                             if (handler.key === "text") {
                                 if (!handler.value.test(context.text)) continue;
                             }
@@ -666,13 +678,14 @@ class Polling extends CallbackManager {
                         else if (context.update[handler.value] === undefined) continue;
                     }
                 }
+                console.log('Function name', handler.func.name)
+                if (allow && handler.func.name.length && !allow.f[handler.func.name]) continue;
                 if (!!await handler.func(context)) {
                     break; // if handler returns anything - stop
                 }
             }
-            
             if (update.callback_query) {
-                const stopped = await (this as any).handle(context, 'callback_query')
+                const stopped = allow && allow.f['callback_query'] && await (this as any).handle(context, 'callback_query')
                 if (!stopped) {
                     const { data } = context.update;
                     
@@ -682,9 +695,13 @@ class Polling extends CallbackManager {
                             if ((this as any).sig(data.slice(this.signLength + 1)) !== data.slice(0, this.signLength)) {
                                 console.warn("Wrong signature");
                             }
-                            else await this.handleCallback(context, args[1], args.slice(2));
+                            else {
+                                if (!allow || allow.f[args[1]])
+                                    await this.handleCallback(context, args[1], args.slice(2));
+                            }
                         } else {
-                            await await this.handleCallback(context, args[0], args.slice(1));
+                            if (!allow || allow.f[args[0]])
+                                await this.handleCallback(context, args[0], args.slice(1));
                         }
                     }
                 }
@@ -694,6 +711,9 @@ class Polling extends CallbackManager {
                     ...(context.update._answer && { ...context.update._answer })
                 }
                 await (this as any).call('answerCallbackQuery', answer);
+            }
+            else if (state && state.input) {
+                await this.handleCallback(context, state.input);
             }
         }
         
@@ -705,13 +725,42 @@ class Polling extends CallbackManager {
         if (!ctx) return null;
 
         const isCallbackQuery = !!update.callback_query;
-        
+
         return new Context(ctx, eventName, this, isCallbackQuery);
     }
 }
 
 function extract(update: any): any {
     return [ Object.values(update)[1], Object.keys(update)[1] ];
+}
+
+/* when state allow is on */
+// TODO caching
+function getAllow(state: any): any {
+    if (typeof state !== 'object') return undefined
+    
+    let allow = state?.allow
+    if (!allow) return undefined
+    
+    if (typeof allow === 'string') allow = [ allow ]
+    
+    const result: any = { h: {}, f: {} }
+    
+    if (!allow.length || allow.length === 1 && allow[0] === "") return result;
+    
+    for (const entry of allow) {
+        if (entry.indexOf(':') !== -1) {
+            const sep = entry.split(':')
+            result.h[sep[0]] = sep[1]
+        }
+        else {
+            if (updateHandlers.has(entry)) result.h[entry] = null;
+            else if (messageHandlers.has(entry)) result.h['message'] = entry;
+            else result.f[entry] = 1;
+        }
+    }
+    
+    return result;
 }
 
 class ShortcutManager {
@@ -733,7 +782,7 @@ class ShortcutManager {
         
         if (ok === false) return false;
         
-        return result.status === 'administrator' || result.status === 'creator'
+        return result.status === 'administrator' || result.status === 'creator';
     }
 }
 
@@ -743,11 +792,40 @@ class Context {
     private readonly _service: any;
     private readonly _isCallbackQuery: boolean;
     
+    private _state: any = null;
+    
+    // TODO ability to disable states?
+    
     constructor(ctx: any, eventName: string, service: any, isCallbackQuery: boolean) {
         this.event = eventName;
         this._update = ctx;
         this._service = service;
         this._isCallbackQuery = isCallbackQuery;
+        
+        // TODO fix! currently unsafe
+        return new Proxy(this, {
+            get(target, prop, receiver) {
+              if (prop === "state") {
+                return (async () => {
+                  if (target._state === null) {
+                    target._state = await target._service.states.get(ctx);
+                  }
+                  return target._state;
+                })();
+              }
+              return Reflect.get(target, prop, receiver);
+            },
+            set(target, prop, value, receiver) {
+              if (prop === "state") {
+                (async () => {
+                  await target._service.states.set(ctx, value);
+                  target._state = value;
+                })();
+                return true;
+              }
+              return Reflect.set(target, prop, value, receiver);
+            },
+          });
     }
     
     get update(): any {
@@ -759,7 +837,36 @@ class Context {
     }
     
     get text(): string | undefined {
-        return this._update.text || this._update.data;
+        return this._update.text || this._update.caption || this._update.data;
+    }
+    
+    getMedia(type: string) {
+        return this._update.message?.[type] || this._update[type];
+    }
+    
+    get type(): string | undefined {
+        const msg = this._update.message || this._update;
+
+        if (!msg) return undefined;
+
+        if (msg.text) return "text";
+        if (msg.photo) return "photo";
+        if (msg.video) return "video";
+        if (msg.document) return "document";
+        if (msg.audio) return "audio";
+        if (msg.voice) return "voice";
+        if (msg.sticker) return "sticker";
+        if (msg.animation) return "animation";
+        if (msg.video_note) return "video_note";
+        if (msg.contact) return "contact";
+        if (msg.location) return "location";
+        if (msg.venue) return "venue";
+        if (msg.poll) return "poll";
+        if (msg.dice) return "dice";
+        
+        if (this._isCallbackQuery && msg.data) return "callback_query";
+        
+        return "unknown";
     }
     
     get chat(): { id: number; [key: string]: any } | undefined {
@@ -772,6 +879,14 @@ class Context {
     
     get message_id(): number | undefined {
         return this._update.message_id || this._update.message?.message_id;
+    }
+    
+    get state(): any {
+        return this._service.states.get(this._update)
+    }
+    
+    set state(new_state: any) {
+        this._service.states.set(this._update, new_state)
     }
     
     get data(): string | undefined {
@@ -819,7 +934,7 @@ class Context {
             console.warn('[Context] .react() can\'t be used for callback_query');
             return;
         }
-        
+
         const chatId = this.chat?.id;
         const messageId = this.message_id;
 
@@ -827,12 +942,25 @@ class Context {
              console.warn('[Context] .react() couldn\'t find chat.id or message_id');
              return;
         }
-        
+
         return this._service.react(chatId, messageId, emoji, big);
     }
     
-    async isAdmin() {
+    async isAdmin(): Promise<boolean> {
         return this.service.isAdmin(this.chat, this.from);
+    }
+    
+    isGroup(): boolean {
+        return (this._update.message || this._update).chat.id < 0;
+    }
+    
+    async input(func: string | Function) {
+        if (!func) throw new Error("No function specified after input is done!")
+        else if (!(this as any)._service.hasCallback(func)) throw new Error("Function must be registered! " + func)
+        this.state = {
+            ...this.state,
+            input: typeof func === 'function' ? func.name : func
+        }
     }
 }
 
@@ -849,6 +977,7 @@ interface TelegramBotBase
         HandlerManager,
         CallbackSigner,
         ShortcutManager,
+        StateManagerMixin,
         Polling {}
 
 applyMixins(TelegramBotBase, [
@@ -861,6 +990,7 @@ applyMixins(TelegramBotBase, [
     HandlerManager,
     CallbackSigner,
     ShortcutManager,
+    StateManagerMixin,
     Polling,
 ]);
 
@@ -876,6 +1006,8 @@ export class TelegramBot extends TelegramBotBase {
     signCallbacks = true;
     signLength = 4;
     started = false;
+    states = new StateManager();
+    cacheRemoverInterval: NodeJS.Timeout | null = null;
 
     constructor(options: BotOptions | string) {
         super();
@@ -892,6 +1024,7 @@ export class TelegramBot extends TelegramBotBase {
         if (!token) throw new OptionsError("Wrong token");
 
         (this as any).initBot(token);
+        (this as any)._startCacheRemover(1000);
     }
 }
 
