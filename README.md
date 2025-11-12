@@ -68,6 +68,34 @@ bot.on('/start', ctx => ctx.reply("Welcome!", mainMenu))
 bot.startPolling()
 ```
 
+## 📖 Pagination Example
+Pagination functions can be asynchronous, but the example is the simplest!
+```js
+import { TelegramBot, Panel, Text, Pagination } from "../";
+
+const bot = new TelegramBot(process.argv[2]);
+
+const data = [1, 2, 3, 4, 5, 6, 7].map(x => ({ number: Math.random() }))
+
+const exampleText = (ctx, data, page) => `Your personal numbers PikiWedia\nYou're on page ${page+1}/${ctx.maxPage}!`
+const exampleData = (ctx, page) => data
+const exampleKeys = (_, numbers, page) => 
+    Panel().Add(numbers.map(({ number }) => [ Text("Float " + number.toFixed(4)) ]))
+
+const close = ctx => ctx.delete()
+const closeKeys = ctx => Panel().Callback("Close panel", close)
+
+const pages = new Pagination("numbers").Text(exampleText)
+                                       .Data(exampleData)
+                                       .Keys(exampleKeys)
+                                       .AfterKeys(closeKeys)
+                                       .PageSize(3)
+
+bot.on('/start', ctx => ctx.open(pages));
+
+bot.startPolling()
+```
+
 ## 📚 More examples
 
 * [Editable panel with an image](https://github.com/JuniorAww/keygram/blob/main/examples/edit.js)
@@ -77,9 +105,9 @@ bot.startPolling()
 ## 🗺️ Roadmap & Milestones
 
 ### Milestones (v0.3.0)
-- [ ] <strong>Pagination:</strong> Add a ready-to-use class for an interactive panel with pages
-- [ ] <strong>Scenes:</strong> Add a scene system for multi-step interactions
-- [ ] <strong>Optimisations:</strong> Refactor the core with best practices in mind! XP
+- [x] <strong>Pagination:</strong> Add a ready-to-use class for an interactive panel with pages
+- [x] <strong>Scenes:</strong> Add a scene system for multi-step interactions
+- [x] <strong>Optimisations:</strong> Refactor the core with best practices in mind! XP
 
 
 ### Future Plans

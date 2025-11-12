@@ -141,7 +141,7 @@ export class PaginationClass {
         const maxPage = Math.ceil(totalSize / this.pageSize) - 1;
         const previousPage = page === 0 ? maxPage : (page - 1);
         const nextPage = page >= maxPage ? 0 : (page + 1);
-        (ctx as any).maxPage = Math.min(1, maxPage + 1);
+        (ctx as any).maxPage = Math.max(1, maxPage + 1);
 
         const keyboard: Button[][] | KeyboardClass = await this.getKeyboard(ctx, data, page, ...args);
         const afterKeys: Button[][] | KeyboardClass | undefined = this.getAfterKeys ? await this.getAfterKeys(ctx, data, page, ...args) : undefined;

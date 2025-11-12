@@ -159,7 +159,10 @@ export class KeyboardClass {
             }
         }
         else {
-            if (this.keyboard[this._row].length === 8) this.keyboard.push([ object ]) // add button
+            if ('Build' in object) {
+                object.keyboard.forEach(row => { this.keyboard.push(row); this._row++ })
+            }
+            else if (this.keyboard[this._row].length === 8) this.keyboard.push([ object ]) // add button
             else this.keyboard[this._row].push(object)
         }
         if (this.keyboard[0].length === 0) {
